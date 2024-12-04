@@ -27,8 +27,11 @@ app.get('/', (req, res) => {
                     height: auto;
                     margin-top: 20px;
                 }
-                .button-group {
-                    margin-top: 20px;
+                button {
+                    margin: 5px;
+                    padding: 10px 20px;
+                    font-size: 16px;
+                    cursor: pointer;
                 }
             </style>
         </head>
@@ -36,68 +39,40 @@ app.get('/', (req, res) => {
             <h1>Upload and Upscale Image</h1>
             <form id="uploadForm" enctype="multipart/form-data">
                 <input type="file" id="imageInput" name="image" accept="image/*" required />
-                <button type="submit">Upload Image</button>
+                <div>
+                    <button type="button" data-resolution="4K">Upscale to 4K</button>
+                    <button type="button" data-resolution="8K">Upscale to 8K</button>
+                    <button type="button" data-resolution="10K">Upscale to 10K</button>
+                </div>
             </form>
-
-            <div class="button-group">
-                <button id="4kButton">Upscale to 4K</button>
-                <button id="8kButton">Upscale to 8K</button>
-                <button id="10kButton">Upscale to 10K</button>
-            </div>
-
             <h2>Result:</h2>
             <p id="blobLink"></p>
             <img id="resultImage" alt="Upscaled Image" />
-            
             <script>
                 const form = document.getElementById('uploadForm');
                 const resultImage = document.getElementById('resultImage');
                 const blobLink = document.getElementById('blobLink');
-                let imageBuffer = null;
+                const buttons = document.querySelectorAll('button[data-resolution]');
 
-                form.onsubmit = async (e) => {
-                    e.preventDefault();
-                    const formData = new FormData(form);
-                    const response = await fetch('/upload', {
-                        method: 'POST',
-                        body: formData,
-                    });
-                    imageBuffer = await response.blob();
+                buttons.forEach(button => {
+                    button.onclick = async (e) => {
+                        const resolution = e.target.getAttribute('data-resolution');
+                        const formData = new FormData(form);
+                        formData.append('resolution', resolution);
 
-                    // Blob URL oluştur ve sonucu göster
-                    const blobUrl = URL.createObjectURL(imageBuffer);
-                    blobLink.innerHTML = \`<a href="\${blobUrl}" target="_blank">Download Image</a>\`;
-                    resultImage.src = blobUrl;
-                };
+                        const response = await fetch('/upload', {
+                            method: 'POST',
+                            body: formData,
+                        });
 
-                // Butonlara event listener ekle
-                document.getElementById('4kButton').addEventListener('click', () => upscaleImage(3840, 2160));
-                document.getElementById('8kButton').addEventListener('click', () => upscaleImage(7680, 4320));
-                document.getElementById('10kButton').addEventListener('click', () => upscaleImage(10240, 5760));
+                        const blob = await response.blob();
 
-                // Seçilen çözünürlüğe göre resmi yeniden boyutlandır
-                async function upscaleImage(width, height) {
-                    if (!imageBuffer) {
-                        alert('Please upload an image first!');
-                        return;
-                    }
-
-                    const formData = new FormData();
-                    formData.append('image', imageBuffer);
-
-                    const response = await fetch('/uploadUpscale', {
-                        method: 'POST',
-                        body: JSON.stringify({ width, height }),
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                    });
-
-                    const blob = await response.blob();
-                    const blobUrl = URL.createObjectURL(blob);
-                    blobLink.innerHTML = \`<a href="\${blobUrl}" target="_blank">Download Image</a>\`;
-                    resultImage.src = blobUrl;
-                }
+                        // Blob URL oluştur ve sonucu göster
+                        const blobUrl = URL.createObjectURL(blob);
+                        blobLink.innerHTML = \`<a href="\${blobUrl}" target="_blank">Download Image</a>\`;
+                        resultImage.src = blobUrl;
+                    };
+                });
             </script>
         </body>
         </html>
@@ -107,27 +82,26 @@ app.get('/', (req, res) => {
 // Dosya yükleme ve işleme
 app.post('/upload', upload.single('image'), async (req, res) => {
     try {
-        // İlk işlem: Resim boyutunu artırma
+        const resolution = req.body.resolution;
+        let width, height;
+
+        // Çözünürlük değerlerini belirle
+        if (resolution === '4K') {
+            width = 3840;
+            height = 2160;
+        } else if (resolution === '8K') {
+            width = 7680;
+            height = 4320;
+        } else if (resolution === '10K') {
+            width = 10240;
+            height = 5760;
+        } else {
+            return res.status(400).send('Invalid resolution');
+        }
+
         const buffer = await sharp(req.file.buffer)
-            .resize(3840, 2160) // Varsayılan olarak 4K boyutlarına ölçekle
-            .toFormat('png') // PNG formatında dönüştür
-            .toBuffer();
-
-        res.set('Content-Type', 'image/png');
-        res.send(buffer); // İşlenmiş görüntüyü gönder
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error processing image.');
-    }
-});
-
-// Yeni işleme isteği (Farklı çözünürlükler için)
-app.post('/uploadUpscale', async (req, res) => {
-    try {
-        const { width, height } = req.body;
-        const buffer = await sharp(req.body.buffer)
-            .resize(width, height) // Kullanıcının seçtiği çözünürlük
-            .toFormat('png') // PNG formatında dönüştür
+            .resize(width, height)
+            .toFormat('png')
             .toBuffer();
 
         res.set('Content-Type', 'image/png');
